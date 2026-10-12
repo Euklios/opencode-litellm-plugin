@@ -159,7 +159,7 @@ if changed or action == "has-plugin":
 PYEOF
   else
     echo "ERROR: python3 is required by the installer but was not found." >&2
-    echo "Install the plugin manually with: opencode2 plugin add $PLUGIN_SPEC" >&2
+    echo "Install the plugin manually with: opencode plugin add $PLUGIN_SPEC" >&2
     echo "and add the providers.litellm block from the README to $CONFIG_FILE" >&2
     exit 1
   fi
@@ -169,7 +169,7 @@ echo "==> Installing opencode-litellm-plugin"
 
 # 1. Install the plugin via the official command (skip if already present)
 if [ "$(json_edit "$CONFIG_FILE" has-plugin -)" = "no" ]; then
-  opencode2 plugin add "$PLUGIN_SPEC"
+  opencode plugin add "$PLUGIN_SPEC"
 else
   echo "==> Plugin entry already present in config (skipping plugin add)"
 fi
@@ -195,7 +195,7 @@ json_edit "$CONFIG_FILE" ensure-hooks-tuple "$HOOKS_URL_ARG"
 # 5. Clear cached copies of this package so the next start fetches the
 #    latest version (makes re-running this installer act as an update).
 #    Handles both cache layouts: the original packages/git-*/ and the
-#    newer npm/git-<name>-<hash>/ scheme used by recent opencode2 builds.
+#    newer npm/git-<name>-<hash>/ scheme used by recent opencode builds.
 #    Note: the cache is cleared BEFORE the plugin add below would run —
 #    but the hooks entrypoint copies to a stable location, so it is done
 #    here at the end (the runtime re-installs at the next start).
@@ -220,7 +220,7 @@ echo "Installed. Next steps:"
 echo ""
 echo "  1. Connect your LiteLLM API key:"
 echo ""
-echo "       opencode2 auth login"
+echo "       opencode auth login"
 echo ""
 echo "     (pick LiteLLM and paste the key)"
 echo ""
@@ -235,7 +235,7 @@ else
   echo "  2. Restart the service if OpenCode is running:"
 fi
 echo ""
-echo "       opencode2 service restart"
+echo "       opencode service restart"
 echo ""
 echo "  Then pick a litellm/* model. The provider becomes visible in /models"
 echo "  once your key is connected and the first models are discovered."
