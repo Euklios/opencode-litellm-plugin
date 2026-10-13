@@ -1,3 +1,2 @@
-// Local-directory entrypoint (opencode.json `plugins` may point at this
-// repo checkout as a path target). Re-exports the server plugin.
-export { default } from "./.opencode/plugins/litellm.js"
+// Package entrypoint for OpenCode's configured-plugin loader.
+export { default } from "./plugin.js"

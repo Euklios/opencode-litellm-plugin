@@ -1,11 +1,11 @@
 {
   "name": "opencode-litellm-plugin",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "description": "OpenCode plugin for LiteLLM proxies: automatic model discovery, provider wiring, and session headers",
   "type": "module",
-  "main": ".opencode/plugins/litellm.js",
+  "main": "./plugin.js",
   "exports": {
-    ".": "./.opencode/plugins/litellm.js",
+    ".": "./plugin.js",
     "./tui": "./tui.tsx"
   },
   "repository": {
@@ -21,7 +21,8 @@
   ],
   "license": "MIT",
   "files": [
-    ".opencode",
+    "plugin.js",
+    "lib",
     "index.js",
     "tui.tsx",
     "README.md",

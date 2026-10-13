@@ -2,7 +2,7 @@
 #
 # opencode-litellm-plugin installer
 #
-# Installs the plugin for OpenCode V2 and adds the required
+# Installs the plugin for OpenCode and adds the required
 # `providers.litellm` configuration block.
 #
 # Usage:
@@ -20,7 +20,19 @@ set -euo pipefail
 PLUGIN_SPEC="git+https://github.com/gianni-bischoff/opencode-litellm-plugin.git"
 # Proxy URL: first script argument, else LITELLM_BASE_URL, else unset
 PROXY_URL="${1:-${LITELLM_BASE_URL:-}}"
-CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
+
+# Ensure ~/.opencode/bin is in PATH if installed there
+if [ -d "$HOME/.opencode/bin" ] && [[ ":$PATH:" != *":$HOME/.opencode/bin:"* ]]; then
+  export PATH="$HOME/.opencode/bin:$PATH"
+fi
+
+if ! command -v opencode >/dev/null 2>&1; then
+  echo "ERROR: 'opencode' command was not found in PATH." >&2
+  echo "Please install OpenCode first: curl -fsSL https://opencode.ai/install | bash" >&2
+  exit 1
+fi
+
+CONFIG_DIR="${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}"
 CONFIG_FILE="$CONFIG_DIR/opencode.json"
 CONFIG_FILEC="$CONFIG_DIR/opencode.jsonc"
 
@@ -34,19 +46,29 @@ mkdir -p "$CONFIG_DIR"
 [ -f "$CONFIG_FILE" ] || printf '{\n  "$schema": "https://opencode.ai/config.json"\n}\n' > "$CONFIG_FILE"
 
 # ---------------------------------------------------------------------------
-# JSON editor: python3 -> bun -> node
+# JSON editor: python3 -> node
 # ---------------------------------------------------------------------------
 json_edit() {
   if command -v python3 >/dev/null 2>&1; then python3 - "$1" "$2" "$3" << 'PYEOF'
-import json, sys, os
+import json, sys, os, re
+
 config_path, action, arg = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(config_path) as f:
     text = f.read()
+
 try:
     cfg = json.loads(text)
-except json.JSONDecodeError as e:
-    sys.exit(f"ERROR: {config_path} is not valid JSON: {e}")
+except json.JSONDecodeError:
+    cleaned = re.sub(r'^[ \t]*//[^\n]*', '', text, flags=re.MULTILINE)
+    cleaned = re.sub(r'/\*.*?\*/', '', cleaned, flags=re.DOTALL)
+    cleaned = re.sub(r',(\s*[}\]])', r'\1', cleaned)
+    try:
+        cfg = json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        sys.exit(f"ERROR: {config_path} is not valid JSON: {e}")
+
 changed = False
+
 if action == "add-provider":
     providers = cfg.setdefault("providers", {})
     if "litellm" not in providers:
@@ -56,59 +78,73 @@ if action == "add-provider":
             "package": "@opencode/ai/providers/openai-compatible",
         }
         changed = True
+    else:
+        litellm_p = providers["litellm"]
+        if isinstance(litellm_p, dict):
+            if "name" not in litellm_p:
+                litellm_p["name"] = "LiteLLM"
+                changed = True
+            env = litellm_p.setdefault("env", [])
+            if "LITELLM_API_KEY" not in env:
+                env.append("LITELLM_API_KEY")
+                changed = True
+            if "package" not in litellm_p:
+                litellm_p["package"] = "@opencode/ai/providers/openai-compatible"
+                changed = True
+
 elif action == "apply-plugin-options":
     base_url = arg
     opts = {"baseURL": base_url} if base_url else {}
-    # Same options on both config keys:
-    #   - "plugins": object entries (V2-style catalog on every build)
-    #   - "plugin":  tuple entries released OpenCode 2.x uses for the
-    #                session runtime; the tuple points at the hooks
-    #                file (the V1 function-form entrypoint seeded by
-    #                ensure-hooks-tuple).
     plugins = cfg.get("plugins", []) or []
-    for entry in plugins:
+    for idx, entry in enumerate(plugins):
         if isinstance(entry, str) and "opencode-litellm-plugin" in entry:
-            idx = plugins.index(entry)
             plugins[idx] = {"package": entry, "options": opts or {"baseURL": "http://127.0.0.1:4000/v1"}}
             changed = True
         elif isinstance(entry, dict) and "opencode-litellm-plugin" in str(entry.get("package", "")):
             entry.setdefault("options", {}).update(opts)
             changed = True
-    for entry in (cfg.get("plugin", []) or []):
-        if isinstance(entry, list) and "opencode-litellm-plugin" in str(entry[0]):
-            entry[1] = dict(entry[1] or {})
-            entry[1].update(opts)
-            changed = True
+
 elif action == "normalize-plugin-entries":
-    # Keep the litellm package entry under the plural "plugins" key (both
-    # generations process it) and keep ONLY the hooks tuple under the
-    # singular "plugin" key, so the strict V1 loader (released OpenCode
-    # 2.x) never trips over the {id, setup}-shaped package entry.
-    kept = []
+    plugins = cfg.setdefault("plugins", [])
+    legacy_plugin = cfg.get("plugin", []) or []
+    kept_plugin = []
     mutated = False
-    for entry in (cfg.get("plugin", []) or []):
+    for entry in legacy_plugin:
         if isinstance(entry, dict) and "opencode-litellm-plugin" in str(entry.get("package", "")):
             mutated = True
-            plugins = cfg.setdefault("plugins", [])
             if entry not in plugins and not any(
                 isinstance(e, dict) and e.get("package") == entry.get("package") for e in plugins
             ):
                 plugins.append(entry)
         elif isinstance(entry, str) and "opencode-litellm-plugin" in entry:
             mutated = True
-            plugins = cfg.setdefault("plugins", [])
             if entry not in plugins and not any(
-                isinstance(e, dict) and e.get("package") == entry for e in plugins
+                (isinstance(e, str) and e == entry) or (isinstance(e, dict) and e.get("package") == entry)
+                for e in plugins
             ):
                 plugins.append(entry)
+        elif isinstance(entry, list) and len(entry) > 0 and "litellm" in str(entry[0]):
+            # Stale hooks tuple from old installer workaround — drop it
+            mutated = True
         else:
-            kept.append(entry)
+            kept_plugin.append(entry)
     if mutated:
-        if kept:
-            cfg["plugin"] = kept
+        if kept_plugin:
+            cfg["plugin"] = kept_plugin
         else:
             cfg.pop("plugin", None)
         changed = True
+
+    # Clean up stale copied hooks files if present
+    hooks_dir = os.path.join(os.path.dirname(config_path), "hooks")
+    for fname in ["litellm-hooks.js", "litellm-core.js"]:
+        fpath = os.path.join(hooks_dir, fname)
+        if os.path.isfile(fpath):
+            try:
+                os.remove(fpath)
+            except OSError:
+                pass
+
 elif action == "has-plugin":
     for entry in (cfg.get("plugins", []) or []):
         if isinstance(entry, str) and "opencode-litellm-plugin" in entry:
@@ -116,49 +152,123 @@ elif action == "has-plugin":
         if isinstance(entry, dict) and "opencode-litellm-plugin" in str(entry.get("package", "")):
             print("yes"); sys.exit(0)
     print("no"); sys.exit(0)
-elif action == "ensure-hooks-tuple":
-    # Seed the V1 hooks entrypoint (released OpenCode 2.x session
-    # runtime). Copies the hooks file to a stable location in the config
-    # dir so the tuple survives plugin cache refreshes.
-    import glob as _glob, shutil as _shutil
-    hooks_dir = os.path.join(os.path.dirname(config_path), "hooks")
-    pkg = None
-    for pat in (
-        f"{os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config'))}/opencode/node_modules/opencode-litellm-plugin",
-        f"{os.environ.get('XDG_CACHE_HOME', os.path.expanduser('~/.cache'))}/opencode/packages/git-*/node_modules/opencode-litellm-plugin",
-        f"{os.environ.get('XDG_CACHE_HOME', os.path.expanduser('~/.cache'))}/opencode/packages/git-*",
-        f"{os.environ.get('XDG_CACHE_HOME', os.path.expanduser('~/.cache'))}/opencode/npm/git-opencode-litellm-plugin*/opencode-litellm-plugin",
-        f"{os.environ.get('XDG_CACHE_HOME', os.path.expanduser('~/.cache'))}/opencode/npm/git-opencode-litellm-plugin*",
-    ):
-        for d in sorted(_glob.glob(pat)):
-            if os.path.isdir(os.path.join(d, ".opencode", "plugins")):
-                pkg = d
-                break
-        if pkg:
-            break
-    hooks = os.path.join(pkg, ".opencode", "plugins", "litellm-hooks.js") if pkg else None
-    core = os.path.join(pkg, ".opencode", "plugins", "litellm-core.js") if pkg else None
-    old = [e for e in (cfg.get("plugin", []) or [])
-           if isinstance(e, list) and "opencode-litellm-plugin" in str(e[0])]
-    if hooks and core and os.path.isfile(hooks):
-        os.makedirs(hooks_dir, exist_ok=True)
-        _shutil.copyfile(hooks, os.path.join(hooks_dir, "litellm-hooks.js"))
-        _shutil.copyfile(core, os.path.join(hooks_dir, "litellm-core.js"))
-        entry = [os.path.join(hooks_dir, "litellm-hooks.js"), {"baseURL": arg} if arg else {}]
-        rest = [e for e in (cfg.get("plugin", []) or []) if e not in old]
-        cfg["plugin"] = [entry] + rest
-        changed = True
-    elif old:
-        # hooks file no longer exists — clean the stale entry up
-        cfg["plugin"] = [e for e in (cfg.get("plugin", []) or []) if e not in old]
-        changed = True
+
 if changed or action == "has-plugin":
     with open(config_path, "w") as f:
         json.dump(cfg, f, indent=2)
         f.write("\n")
 PYEOF
+  elif command -v node >/dev/null 2>&1; then node - "$1" "$2" "$3" << 'NODEOF'
+const fs = require("fs");
+const path = require("path");
+
+const configPath = process.argv[1];
+const action = process.argv[2];
+const arg = process.argv[3];
+
+let text = fs.readFileSync(configPath, "utf8");
+let cfg;
+try {
+  cfg = JSON.parse(text);
+} catch {
+  const cleaned = text
+    .replace(/^[ \t]*\/\/[^\n]*/gm, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/,(\s*[}\]])/g, "$1");
+  try {
+    cfg = JSON.parse(cleaned);
+  } catch (err) {
+    console.error(`ERROR: ${configPath} is not valid JSON: ${err.message}`);
+    process.exit(1);
+  }
+}
+
+let changed = false;
+
+if (action === "add-provider") {
+  cfg.providers = cfg.providers || {};
+  if (!cfg.providers.litellm) {
+    cfg.providers.litellm = {
+      name: "LiteLLM",
+      env: ["LITELLM_API_KEY"],
+      package: "@opencode/ai/providers/openai-compatible",
+    };
+    changed = true;
+  } else if (typeof cfg.providers.litellm === "object") {
+    const p = cfg.providers.litellm;
+    if (!p.name) { p.name = "LiteLLM"; changed = true; }
+    p.env = Array.isArray(p.env) ? p.env : [];
+    if (!p.env.includes("LITELLM_API_KEY")) { p.env.push("LITELLM_API_KEY"); changed = true; }
+    if (!p.package) { p.package = "@opencode/ai/providers/openai-compatible"; changed = true; }
+  }
+} else if (action === "apply-plugin-options") {
+  const opts = arg ? { baseURL: arg } : {};
+  const plugins = cfg.plugins || [];
+  for (let i = 0; i < plugins.length; i++) {
+    const entry = plugins[i];
+    if (typeof entry === "string" && entry.includes("opencode-litellm-plugin")) {
+      plugins[i] = { package: entry, options: arg ? opts : { baseURL: "http://127.0.0.1:4000/v1" } };
+      changed = true;
+    } else if (entry && typeof entry === "object" && String(entry.package || "").includes("opencode-litellm-plugin")) {
+      entry.options = Object.assign(entry.options || {}, opts);
+      changed = true;
+    }
+  }
+} else if (action === "normalize-plugin-entries") {
+  cfg.plugins = cfg.plugins || [];
+  const legacy = cfg.plugin || [];
+  const kept = [];
+  let mutated = false;
+  for (const entry of legacy) {
+    if (entry && typeof entry === "object" && !Array.isArray(entry) && String(entry.package || "").includes("opencode-litellm-plugin")) {
+      mutated = true;
+      if (!cfg.plugins.some(e => typeof e === "object" && e.package === entry.package)) {
+        cfg.plugins.push(entry);
+      }
+    } else if (typeof entry === "string" && entry.includes("opencode-litellm-plugin")) {
+      mutated = true;
+      if (!cfg.plugins.some(e => e === entry || (typeof e === "object" && e.package === entry))) {
+        cfg.plugins.push(entry);
+      }
+    } else if (Array.isArray(entry) && entry.length > 0 && String(entry[0]).includes("litellm")) {
+      mutated = true;
+    } else {
+      kept.push(entry);
+    }
+  }
+  if (mutated) {
+    if (kept.length > 0) cfg.plugin = kept;
+    else delete cfg.plugin;
+    changed = true;
+  }
+  const hooksDir = path.join(path.dirname(configPath), "hooks");
+  for (const fname of ["litellm-hooks.js", "litellm-core.js"]) {
+    const fpath = path.join(hooksDir, fname);
+    if (fs.existsSync(fpath)) {
+      try { fs.unlinkSync(fpath); } catch {}
+    }
+  }
+} else if (action === "has-plugin") {
+  for (const entry of cfg.plugins || []) {
+    if (typeof entry === "string" && entry.includes("opencode-litellm-plugin")) {
+      console.log("yes");
+      process.exit(0);
+    }
+    if (entry && typeof entry === "object" && String(entry.package || "").includes("opencode-litellm-plugin")) {
+      console.log("yes");
+      process.exit(0);
+    }
+  }
+  console.log("no");
+  process.exit(0);
+}
+
+if (changed) {
+  fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2) + "\n");
+}
+NODEOF
   else
-    echo "ERROR: python3 is required by the installer but was not found." >&2
+    echo "ERROR: python3 or node is required by the installer but neither was found." >&2
     echo "Install the plugin manually with: opencode plugin add $PLUGIN_SPEC" >&2
     echo "and add the providers.litellm block from the README to $CONFIG_FILE" >&2
     exit 1
@@ -167,52 +277,39 @@ PYEOF
 
 echo "==> Installing opencode-litellm-plugin"
 
-# 1. Install the plugin via the official command (skip if already present)
-if [ "$(json_edit "$CONFIG_FILE" has-plugin -)" = "no" ]; then
-  opencode plugin add "$PLUGIN_SPEC"
-else
-  echo "==> Plugin entry already present in config (skipping plugin add)"
-fi
-
-# 2. Add the providers.litellm block (creates the /connect integration)
-json_edit "$CONFIG_FILE" add-provider -
-
-# 3. Apply the proxy URL, if provided (to both config keys) and normalize
-#    the plugin entries across config generations.
-json_edit "$CONFIG_FILE" normalize-plugin-entries -
-if [ -n "$PROXY_URL" ]; then
-  json_edit "$CONFIG_FILE" apply-plugin-options "$PROXY_URL"
-  echo "==> Proxy URL set to: $PROXY_URL"
-fi
-
-# 4. Seed the V1 hooks entrypoint (function form) so released OpenCode 2.x
-#    builds can hand the discovered models to the session runtime. Needs
-#    the installed package on disk; when it is not locatable this is a
-#    no-op (set LITELLM_BASE_URL instead — the hooks entrypoint reads it).
-HOOKS_URL_ARG="${PROXY_URL:-${LITELLM_BASE_URL:-}}"
-json_edit "$CONFIG_FILE" ensure-hooks-tuple "$HOOKS_URL_ARG"
-
-# 5. Clear cached copies of this package so the next start fetches the
-#    latest version (makes re-running this installer act as an update).
-#    Handles both cache layouts: the original packages/git-*/ and the
-#    newer npm/git-<name>-<hash>/ scheme used by recent opencode builds.
-#    Note: the cache is cleared BEFORE the plugin add below would run —
-#    but the hooks entrypoint copies to a stable location, so it is done
-#    here at the end (the runtime re-installs at the next start).
+# Clear every generation of this package before updating. Recent OpenCode
+# versions nest each install below a timestamp, so testing only for a direct
+# node_modules/ child leaves stale generations behind.
 CACHE_BASE="${XDG_CACHE_HOME:-$HOME/.cache}/opencode"
 if [ -d "$CACHE_BASE/packages" ]; then
   for d in "$CACHE_BASE"/packages/git-*/; do
     [ -d "$d/node_modules/opencode-litellm-plugin" ] || continue
     rm -rf "$d"
-    echo "==> Cleared cached package copy (packages layout)"
   done
 fi
 if [ -d "$CACHE_BASE/npm" ]; then
   for d in "$CACHE_BASE"/npm/git-opencode-litellm-plugin-*/; do
     [ -d "$d" ] || continue
     rm -rf "$d"
-    echo "==> Cleared cached package copy (npm layout)"
   done
+fi
+
+# 1. Install or update the plugin via the official opencode CLI
+if [ "$(json_edit "$CONFIG_FILE" has-plugin -)" = "no" ]; then
+  opencode plugin add "$PLUGIN_SPEC"
+else
+  echo "==> Plugin entry already present in config, updating..."
+  opencode plugin update "$PLUGIN_SPEC"
+fi
+
+# 2. Add the providers.litellm block (creates the /connect integration)
+json_edit "$CONFIG_FILE" add-provider -
+
+# 3. Apply the proxy URL, if provided, and normalize plugin entries
+json_edit "$CONFIG_FILE" normalize-plugin-entries -
+if [ -n "$PROXY_URL" ]; then
+  json_edit "$CONFIG_FILE" apply-plugin-options "$PROXY_URL"
+  echo "==> Proxy URL set to: $PROXY_URL"
 fi
 
 echo ""

@@ -20,7 +20,7 @@ const budgetSchema = {
   required: ["spend", "updatedAt"],
 }
 
-// Mirrors the RPC registration in .opencode/plugins/litellm.js.
+// Mirrors the RPC registration in plugin.js.
 const definition = {
   id: "litellm",
   methods: {

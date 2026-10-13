@@ -38,16 +38,15 @@ curl -fsSL "https://raw.githubusercontent.com/gianni-bischoff/opencode-litellm-p
 The `?t=$(date +%s)` parameter only busts raw.githubusercontent's ~5-minute
 CDN cache so you always get the latest script.
 
-The installer runs `opencode2 plugin add`, adds the required
+The installer runs `opencode plugin add`, adds the required
 `providers.litellm` block to your global config, applies the proxy URL,
-seeds the released-build hooks entrypoint (see below), and clears
-previously cached copies of the plugin package — so **re-running it also
-updates the plugin to the latest version**.
+and clears cached copies of the plugin package before refreshing it — so
+**re-running it also updates the plugin to the latest version**.
 
 Then connect your key:
 
 ```bash
-opencode2 auth login
+opencode auth login
 ```
 
 Pick **LiteLLM** and paste your LiteLLM proxy key. After a restart the plugin
@@ -60,12 +59,12 @@ discovers your models automatically.
 ### Manual install (any OS)
 
 ```bash
-opencode2 plugin add git+https://github.com/gianni-bischoff/opencode-litellm-plugin.git
+opencode plugin add git+https://github.com/gianni-bischoff/opencode-litellm-plugin.git
 ```
 
 Then add this block to `~/.config/opencode/opencode.json` (or
 `opencode.jsonc`) yourself — it registers the provider and makes LiteLLM
-appear in `/connect` / `opencode2 auth login`:
+appear in `/connect` / `opencode auth login`:
 
 ```jsonc
 {
@@ -98,28 +97,7 @@ requests (the plugin keeps its settings updated at runtime):
 
 No `models` block is needed — the plugin adds the discovered models
 automatically. The `env` field is what makes LiteLLM appear in
-`/connect` and `opencode2 auth login`.
-
-### Released OpenCode 2.x builds
-
-Released OpenCode 2.x builds sessions on a different runtime, so the
-installer additionally writes a `plugin` entry pointing at
-`.opencode/plugins/litellm-hooks.js` (copied to `hooks/` inside the
-global config dir). That entry injects the discovered models and the
-proxy pricing into the session runtime, adds the session/customer
-headers on every request, and re-syncs when new sessions start.
-
-Notes for released builds:
-
-- Models added on the proxy show up in `/models`, CLI list and the
-  plugin log on the next OpenCode start (the session runtime builds its
-  provider registry once; the TUI model list refreshes live).
-- The API key is taken from `LITELLM_API_KEY`, `options.apiKey`, or the
-  tuple's options — the `/connect` credential works on V2-style builds.
-- Some released builds drop the `options` object when loading the
-  catalog plugin from the plural `plugins` key. The plugin then recovers
-  `baseURL` (and the other options) from the config files itself, or
-  from the `LITELLM_BASE_URL` environment variable as a last resort.
+`/connect` and `opencode auth login`.
 
 ## How the proxy URL is resolved
 
@@ -145,7 +123,7 @@ With no options at all, every default applies.
 
 ## API key resolution order
 
-1. The `/connect` credential (`opencode2 auth login` → LiteLLM)
+1. The `/connect` credential (`opencode auth login` → LiteLLM)
 2. `options.apiKey`
 3. The `LITELLM_API_KEY` environment variable
 
@@ -175,10 +153,10 @@ tail -20 ~/.local/share/opencode/litellm-plugin.log
 
 | Log line | Cause | Fix |
 |---|---|---|
-| `no API key found` | No key connected | `opencode2 auth login` → pick **LiteLLM** → paste key, then restart |
-| `GET .../models -> 401` / `403` | Key rejected (wrong/expired) | Reconnect a valid proxy key via `opencode2 auth login` |
+| `no API key found` | No key connected | `opencode auth login` → pick **LiteLLM** → paste key, then restart |
+| `GET .../models -> 401` / `403` | Key rejected (wrong/expired) | Reconnect a valid proxy key via `opencode auth login` |
 | `fetch failed: ...` | Proxy unreachable | Check `options.baseURL`; for Tailscale proxies make sure the machine is on the tailnet |
-| no log lines at all | Plugin not loaded | the plugin entry must be present in the config (`opencode2 plugin add` writes it); released OpenCode 2.x builds also need the `hooks/` copy `install.sh` seeds |
+| no log lines at all | Plugin not loaded | the plugin entry must be present in the config (`opencode plugin add` writes it) |
 
 Quick reachability test from that machine (with your proxy key):
 
@@ -201,9 +179,8 @@ the active session is running a `litellm/*` model:
 - color-coded: green < 60%, yellow 60–85%, red ≥ 85%
 - a warning toast once per window when spending crosses 90%
 - hidden on the home screen and whenever another provider is active
-- hidden entirely on released OpenCode 2.x builds (plugin RPC is not
-  available there — the budget is still read, logged, and shown in the
-  LiteLLM UI)
+- hidden when the current OpenCode build does not expose plugin RPC (the
+  budget is still read, logged, and shown in the LiteLLM UI)
 
 Requirements on the proxy side — grant the key two routes:
 
@@ -217,7 +194,7 @@ finishes** (a couple of seconds later — LiteLLM commits spend just after
 the execution ends), on new sessions, and on a 5-minute timer; each
 refresh is pushed live to all running OpenCode windows.
 
-How it works: the server plugin (`.opencode/plugins/litellm.js`) reads
+How it works: the server plugin (`plugin.js`) reads
 `/key/info` on every sync and publishes the budget over OpenCode's plugin
 RPC (method `budget` + event `budget`). The TUI widget (`tui.tsx`, same
 package, loaded automatically) fetches it on startup and live-updates.
@@ -231,7 +208,7 @@ No plugin options are needed. To hide the widget, disable the plugin id
 ## Session cost & pricing
 
 OpenCode computes session costs from per-token model prices — with none set,
-`litellm/*` models show `$0.00` in `opencode2 stats --cost --models`. This
+`litellm/*` models show `$0.00` in `opencode stats --cost --models`. This
 plugin fills in prices from two sources:
 
 1. **Automatic — read from the proxy.** Every sync calls LiteLLM's
@@ -268,7 +245,7 @@ plugin fills in prices from two sources:
 After prices are in place, check them with:
 
 ```bash
-opencode2 stats --cost --models
+opencode stats --cost --models
 ```
 
 ## Notes

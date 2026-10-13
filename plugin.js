@@ -7,7 +7,7 @@ import {
   sync,
   budgetSchema,
   configOptionsFallback,
-} from "./litellm-core.js"
+} from "./lib/litellm-core.js"
 
 /**
  * OpenCode V2 server plugin: LiteLLM proxy integration.
@@ -28,9 +28,10 @@ import {
  *    appear automatically.
  *  - Reads proxy pricing (`/model/info`) and the key budget (`/key/info`).
  *
- * The function-form V1 entrypoint (litellm-hooks.js) is what makes
- * sessions use these models on released OpenCode 2.x; install.sh seeds
- * both.
+ * This is intentionally the only JavaScript file in a plugin directory.
+ * OpenCode automatically loads every file in `.opencode/plugins/`; keeping
+ * support modules elsewhere prevents duplicate plugin registrations when a
+ * checkout is also configured as a package plugin.
  */
 
 export default {
