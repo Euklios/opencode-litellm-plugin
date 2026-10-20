@@ -14,12 +14,23 @@
 #   curl -fsSL https://raw.githubusercontent.com/gianni-bischoff/opencode-litellm-plugin/main/install.sh \
 #     | bash -s -- https://your-proxy.example.com/v1
 #
+# Optional second argument: provider ID (default "litellm"). Use an empty
+# first argument to keep the default proxy URL:
+#
+#   ... | bash -s -- "" my-proxy
+#
 # (LITELLM_BASE_URL is still honored as a fallback.)
 set -euo pipefail
 
 PLUGIN_SPEC="git+https://github.com/gianni-bischoff/opencode-litellm-plugin.git"
 # Proxy URL: first script argument, else LITELLM_BASE_URL, else unset
 PROXY_URL="${1:-${LITELLM_BASE_URL:-}}"
+# Provider ID: second script argument, else "litellm"
+PROVIDER_ID="${2:-litellm}"
+if ! [[ "$PROVIDER_ID" =~ ^[A-Za-z0-9_-]+$ ]]; then
+  echo "ERROR: provider ID may only contain letters, digits, '_' and '-': '$PROVIDER_ID'" >&2
+  exit 1
+fi
 
 # Ensure ~/.opencode/bin is in PATH if installed there
 if [ -d "$HOME/.opencode/bin" ] && [[ ":$PATH:" != *":$HOME/.opencode/bin:"* ]]; then
@@ -49,10 +60,10 @@ mkdir -p "$CONFIG_DIR"
 # JSON editor: python3 -> node
 # ---------------------------------------------------------------------------
 json_edit() {
-  if command -v python3 >/dev/null 2>&1; then python3 - "$1" "$2" "$3" << 'PYEOF'
+  if command -v python3 >/dev/null 2>&1; then python3 - "$1" "$2" "$3" "${4:-litellm}" << 'PYEOF'
 import json, sys, os, re
 
-config_path, action, arg = sys.argv[1], sys.argv[2], sys.argv[3]
+config_path, action, arg, provider_id = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 with open(config_path) as f:
     text = f.read()
 
@@ -71,15 +82,15 @@ changed = False
 
 if action == "add-provider":
     providers = cfg.setdefault("providers", {})
-    if "litellm" not in providers:
-        providers["litellm"] = {
+    if provider_id not in providers:
+        providers[provider_id] = {
             "name": "LiteLLM",
             "env": ["LITELLM_API_KEY"],
             "package": "@opencode/ai/providers/openai-compatible",
         }
         changed = True
     else:
-        litellm_p = providers["litellm"]
+        litellm_p = providers[provider_id]
         if isinstance(litellm_p, dict):
             if "name" not in litellm_p:
                 litellm_p["name"] = "LiteLLM"
@@ -95,6 +106,8 @@ if action == "add-provider":
 elif action == "apply-plugin-options":
     base_url = arg
     opts = {"baseURL": base_url} if base_url else {}
+    if provider_id != "litellm":
+        opts["providerID"] = provider_id
     plugins = cfg.get("plugins", []) or []
     for idx, entry in enumerate(plugins):
         if isinstance(entry, str) and "opencode-litellm-plugin" in entry:
@@ -158,13 +171,14 @@ if changed or action == "has-plugin":
         json.dump(cfg, f, indent=2)
         f.write("\n")
 PYEOF
-  elif command -v node >/dev/null 2>&1; then node - "$1" "$2" "$3" << 'NODEOF'
+  elif command -v node >/dev/null 2>&1; then node - "$1" "$2" "$3" "${4:-litellm}" << 'NODEOF'
 const fs = require("fs");
 const path = require("path");
 
-const configPath = process.argv[1];
-const action = process.argv[2];
-const arg = process.argv[3];
+const configPath = process.argv[2];
+const action = process.argv[3];
+const arg = process.argv[4];
+const providerId = process.argv[5];
 
 let text = fs.readFileSync(configPath, "utf8");
 let cfg;
@@ -187,15 +201,15 @@ let changed = false;
 
 if (action === "add-provider") {
   cfg.providers = cfg.providers || {};
-  if (!cfg.providers.litellm) {
-    cfg.providers.litellm = {
+  if (!cfg.providers[providerId]) {
+    cfg.providers[providerId] = {
       name: "LiteLLM",
       env: ["LITELLM_API_KEY"],
       package: "@opencode/ai/providers/openai-compatible",
     };
     changed = true;
-  } else if (typeof cfg.providers.litellm === "object") {
-    const p = cfg.providers.litellm;
+  } else if (typeof cfg.providers[providerId] === "object") {
+    const p = cfg.providers[providerId];
     if (!p.name) { p.name = "LiteLLM"; changed = true; }
     p.env = Array.isArray(p.env) ? p.env : [];
     if (!p.env.includes("LITELLM_API_KEY")) { p.env.push("LITELLM_API_KEY"); changed = true; }
@@ -203,11 +217,12 @@ if (action === "add-provider") {
   }
 } else if (action === "apply-plugin-options") {
   const opts = arg ? { baseURL: arg } : {};
+  if (providerId !== "litellm") opts.providerID = providerId;
   const plugins = cfg.plugins || [];
   for (let i = 0; i < plugins.length; i++) {
     const entry = plugins[i];
     if (typeof entry === "string" && entry.includes("opencode-litellm-plugin")) {
-      plugins[i] = { package: entry, options: arg ? opts : { baseURL: "http://127.0.0.1:4000/v1" } };
+      plugins[i] = { package: entry, options: Object.keys(opts).length ? opts : { baseURL: "http://127.0.0.1:4000/v1" } };
       changed = true;
     } else if (entry && typeof entry === "object" && String(entry.package || "").includes("opencode-litellm-plugin")) {
       entry.options = Object.assign(entry.options || {}, opts);
@@ -302,14 +317,15 @@ else
   opencode plugin update "$PLUGIN_SPEC"
 fi
 
-# 2. Add the providers.litellm block (creates the /connect integration)
-json_edit "$CONFIG_FILE" add-provider -
+# 2. Add the providers.<id> block (creates the /connect integration)
+json_edit "$CONFIG_FILE" add-provider - "$PROVIDER_ID"
 
-# 3. Apply the proxy URL, if provided, and normalize plugin entries
-json_edit "$CONFIG_FILE" normalize-plugin-entries -
-if [ -n "$PROXY_URL" ]; then
-  json_edit "$CONFIG_FILE" apply-plugin-options "$PROXY_URL"
-  echo "==> Proxy URL set to: $PROXY_URL"
+# 3. Apply the proxy URL and provider ID, if provided, and normalize plugin entries
+json_edit "$CONFIG_FILE" normalize-plugin-entries - "$PROVIDER_ID"
+if [ -n "$PROXY_URL" ] || [ "$PROVIDER_ID" != "litellm" ]; then
+  json_edit "$CONFIG_FILE" apply-plugin-options "$PROXY_URL" "$PROVIDER_ID"
+  [ -n "$PROXY_URL" ] && echo "==> Proxy URL set to: $PROXY_URL"
+  [ "$PROVIDER_ID" != "litellm" ] && echo "==> Provider ID set to: $PROVIDER_ID"
 fi
 
 echo ""
@@ -334,7 +350,7 @@ fi
 echo ""
 echo "       opencode service restart"
 echo ""
-echo "  Then pick a litellm/* model. The provider becomes visible in /models"
+echo "  Then pick a $PROVIDER_ID/* model. The provider becomes visible in /models"
 echo "  once your key is connected and the first models are discovered."
 echo ""
 echo "  If no models appear, check the plugin log:"
