@@ -10,6 +10,7 @@ import { createSignal } from "solid-js"
 const budgetSchema = {
   type: "object",
   properties: {
+    providerID: { type: "string" },
     spend: { type: "number" },
     maxBudget: { type: ["number", "null"] },
     resetAt: { type: ["string", "null"] },
@@ -99,11 +100,11 @@ const defined = Plugin.define({
             const session = input?.sessionID
               ? ctx.data.session.get(input.sessionID)
               : undefined
-            if (session?.model?.providerID !== "litellm") {
+            const data = budget()
+            if (session?.model?.providerID !== (data?.providerID ?? "litellm")) {
               return <text></text>
             }
 
-            const data = budget()
             if (!data) {
               return (
                 <text fg={colors.subdued}>

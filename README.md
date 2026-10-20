@@ -35,6 +35,17 @@ curl -fsSL "https://raw.githubusercontent.com/gianni-bischoff/opencode-litellm-p
   | bash -s -- https://litellm.example.com/v1
 ```
 
+To also rename the provider (default `litellm`), pass the provider ID as a
+**second argument**. Use an empty first argument to keep the default proxy URL:
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/gianni-bischoff/opencode-litellm-plugin/main/install.sh?t=$(date +%s)" \
+  | bash -s -- "" my-proxy
+```
+
+The ID may contain only letters, digits, `_` and `-`. The models then appear as
+`my-proxy/*` in `/models`, and `opencode auth login` lists the provider under that ID.
+
 The `?t=$(date +%s)` parameter only busts raw.githubusercontent's ~5-minute
 CDN cache so you always get the latest script.
 
