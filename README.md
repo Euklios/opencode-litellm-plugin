@@ -36,13 +36,6 @@ curl -fsSL "https://raw.githubusercontent.com/gianni-bischoff/opencode-litellm-p
   | bash -s -- https://litellm.example.com/v1
 ```
 
-Use an empty first argument to keep the default proxy URL:
-
-```bash
-curl -fsSL "https://raw.githubusercontent.com/gianni-bischoff/opencode-litellm-plugin/main/install.sh?t=$(date +%s)" \
-  | bash -s -- "" mait-gateway
-```
-
 Provider IDs may contain only letters, digits, `_`, and `-`.
 
 The `?t=$(date +%s)` parameter only busts raw.githubusercontent's ~5-minute
