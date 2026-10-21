@@ -28,30 +28,38 @@ curl -fsSL "https://raw.githubusercontent.com/gianni-bischoff/opencode-litellm-p
 ```
 
 If your proxy is not at the default `http://127.0.0.1:4000/v1`, pass its URL
-**as an argument** (env vars on the `curl` side of a pipe do not reach `bash`):
+as the first argument (env vars on the `curl` side of a pipe do not reach
+`bash`):
 
 ```bash
 curl -fsSL "https://raw.githubusercontent.com/gianni-bischoff/opencode-litellm-plugin/main/install.sh?t=$(date +%s)" \
   | bash -s -- https://litellm.example.com/v1
 ```
 
-To also rename the provider (default `litellm`), pass the provider ID as a
-**second argument**. Use an empty first argument to keep the default proxy URL:
+To use a custom provider ID and name in `/connect` (and in model references),
+pass it as the second argument. This makes models use the
+`mait-gateway/<model>` prefix:
 
 ```bash
 curl -fsSL "https://raw.githubusercontent.com/gianni-bischoff/opencode-litellm-plugin/main/install.sh?t=$(date +%s)" \
-  | bash -s -- "" my-proxy
+  | bash -s -- https://ai-gateway.mait-group.com/v1 mait-gateway
 ```
 
-The ID may contain only letters, digits, `_` and `-`. The models then appear as
-`my-proxy/*` in `/models`, and `opencode auth login` lists the provider under that ID.
+Use an empty first argument to keep the default proxy URL:
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/gianni-bischoff/opencode-litellm-plugin/main/install.sh?t=$(date +%s)" \
+  | bash -s -- "" mait-gateway
+```
+
+Provider IDs may contain only letters, digits, `_`, and `-`.
 
 The `?t=$(date +%s)` parameter only busts raw.githubusercontent's ~5-minute
 CDN cache so you always get the latest script.
 
-The installer runs `opencode plugin add`, adds the required
-`providers.litellm` block to your global config, applies the proxy URL,
-and clears cached copies of the plugin package before refreshing it — so
+The installer runs `opencode plugin add`, adds the required provider block to
+your global config, applies the proxy URL and optional provider ID, and clears
+cached copies of the plugin package before refreshing it — so
 **re-running it also updates the plugin to the latest version**.
 
 Then connect your key:

@@ -3,29 +3,29 @@
 # opencode-litellm-plugin installer
 #
 # Installs the plugin for OpenCode and adds the required
-# `providers.litellm` configuration block.
+# provider configuration block.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/gianni-bischoff/opencode-litellm-plugin/main/install.sh | bash
 #
-# With a proxy URL (pass it as an argument — env vars on the curl side of a
-# pipe do NOT reach bash):
+# With a proxy URL and an optional provider ID/display name (pass them as
+# arguments — env vars on the curl side of a pipe do NOT reach bash):
 #
 #   curl -fsSL https://raw.githubusercontent.com/gianni-bischoff/opencode-litellm-plugin/main/install.sh \
-#     | bash -s -- https://your-proxy.example.com/v1
+#     | bash -s -- https://your-proxy.example.com/v1 mait-gateway
 #
 # Optional second argument: provider ID (default "litellm"). Use an empty
 # first argument to keep the default proxy URL:
 #
-#   ... | bash -s -- "" my-proxy
+#   ... | bash -s -- "" mait-gateway
 #
 # (LITELLM_BASE_URL is still honored as a fallback.)
 set -euo pipefail
 
 PLUGIN_SPEC="git+https://github.com/gianni-bischoff/opencode-litellm-plugin.git"
-# Proxy URL: first script argument, else LITELLM_BASE_URL, else unset
+# Proxy URL: first script argument, else LITELLM_BASE_URL, else unset.
+# Provider ID: second script argument, else the default "litellm".
 PROXY_URL="${1:-${LITELLM_BASE_URL:-}}"
-# Provider ID: second script argument, else "litellm"
 PROVIDER_ID="${2:-litellm}"
 if ! [[ "$PROVIDER_ID" =~ ^[A-Za-z0-9_-]+$ ]]; then
   echo "ERROR: provider ID may only contain letters, digits, '_' and '-': '$PROVIDER_ID'" >&2
@@ -82,32 +82,36 @@ changed = False
 
 if action == "add-provider":
     providers = cfg.setdefault("providers", {})
+    provider_name = "LiteLLM" if provider_id == "litellm" else provider_id
     if provider_id not in providers:
         providers[provider_id] = {
-            "name": "LiteLLM",
+            "name": provider_name,
             "env": ["LITELLM_API_KEY"],
             "package": "@opencode/ai/providers/openai-compatible",
         }
         changed = True
     else:
-        litellm_p = providers[provider_id]
-        if isinstance(litellm_p, dict):
-            if "name" not in litellm_p:
-                litellm_p["name"] = "LiteLLM"
+        provider = providers[provider_id]
+        if isinstance(provider, dict):
+            if "name" not in provider:
+                provider["name"] = provider_name
                 changed = True
-            env = litellm_p.setdefault("env", [])
+            env = provider.setdefault("env", [])
             if "LITELLM_API_KEY" not in env:
                 env.append("LITELLM_API_KEY")
                 changed = True
-            if "package" not in litellm_p:
-                litellm_p["package"] = "@opencode/ai/providers/openai-compatible"
+            if "package" not in provider:
+                provider["package"] = "@opencode/ai/providers/openai-compatible"
                 changed = True
 
 elif action == "apply-plugin-options":
     base_url = arg
-    opts = {"baseURL": base_url} if base_url else {}
+    opts = {}
+    if base_url:
+        opts["baseURL"] = base_url
     if provider_id != "litellm":
         opts["providerID"] = provider_id
+        opts["name"] = provider_id
     plugins = cfg.get("plugins", []) or []
     for idx, entry in enumerate(plugins):
         if isinstance(entry, str) and "opencode-litellm-plugin" in entry:
@@ -178,7 +182,7 @@ const path = require("path");
 const configPath = process.argv[2];
 const action = process.argv[3];
 const arg = process.argv[4];
-const providerId = process.argv[5];
+const providerID = process.argv[5];
 
 let text = fs.readFileSync(configPath, "utf8");
 let cfg;
@@ -201,23 +205,28 @@ let changed = false;
 
 if (action === "add-provider") {
   cfg.providers = cfg.providers || {};
-  if (!cfg.providers[providerId]) {
-    cfg.providers[providerId] = {
-      name: "LiteLLM",
+  const providerName = providerID === "litellm" ? "LiteLLM" : providerID;
+  if (!cfg.providers[providerID]) {
+    cfg.providers[providerID] = {
+      name: providerName,
       env: ["LITELLM_API_KEY"],
       package: "@opencode/ai/providers/openai-compatible",
     };
     changed = true;
-  } else if (typeof cfg.providers[providerId] === "object") {
-    const p = cfg.providers[providerId];
-    if (!p.name) { p.name = "LiteLLM"; changed = true; }
+  } else if (typeof cfg.providers[providerID] === "object") {
+    const p = cfg.providers[providerID];
+    if (!p.name) { p.name = providerName; changed = true; }
     p.env = Array.isArray(p.env) ? p.env : [];
     if (!p.env.includes("LITELLM_API_KEY")) { p.env.push("LITELLM_API_KEY"); changed = true; }
     if (!p.package) { p.package = "@opencode/ai/providers/openai-compatible"; changed = true; }
   }
 } else if (action === "apply-plugin-options") {
-  const opts = arg ? { baseURL: arg } : {};
-  if (providerId !== "litellm") opts.providerID = providerId;
+  const opts = {};
+  if (arg) opts.baseURL = arg;
+  if (providerID !== "litellm") {
+    opts.providerID = providerID;
+    opts.name = providerID;
+  }
   const plugins = cfg.plugins || [];
   for (let i = 0; i < plugins.length; i++) {
     const entry = plugins[i];
@@ -309,33 +318,50 @@ if [ -d "$CACHE_BASE/npm" ]; then
   done
 fi
 
-# 1. Install or update the plugin via the official opencode CLI
-if [ "$(json_edit "$CONFIG_FILE" has-plugin -)" = "no" ]; then
-  opencode plugin add "$PLUGIN_SPEC"
+# 1. Install or update via the OpenCode CLI. OpenCode 2's current CLI uses
+# `plugin add` / `plugin update`; older images used `plugin <module>` with
+# `--force`. The latter is still common in sandbox base images, so identify
+# the CLI shape from its own help rather than its version number.
+PLUGIN_HELP="$(opencode plugin --help 2>&1 || true)"
+if printf '%s\n' "$PLUGIN_HELP" | grep -q 'plugin <subcommand>'; then
+  if [ "$(json_edit "$CONFIG_FILE" has-plugin -)" = "no" ]; then
+    opencode plugin add "$PLUGIN_SPEC"
+  else
+    echo "==> Plugin entry already present in config, updating..."
+    opencode plugin update "$PLUGIN_SPEC"
+  fi
+elif printf '%s\n' "$PLUGIN_HELP" | grep -q 'plugin <module>'; then
+  echo "==> Installing with the legacy OpenCode plugin CLI..."
+  opencode plugin "$PLUGIN_SPEC" --global --force
 else
-  echo "==> Plugin entry already present in config, updating..."
-  opencode plugin update "$PLUGIN_SPEC"
+  echo "ERROR: Could not determine the installed OpenCode plugin CLI syntax." >&2
+  printf '%s\n' "$PLUGIN_HELP" >&2
+  exit 1
 fi
 
-# 2. Add the providers.<id> block (creates the /connect integration)
+# 2. Add the provider block (creates the /connect integration)
 json_edit "$CONFIG_FILE" add-provider - "$PROVIDER_ID"
 
-# 3. Apply the proxy URL and provider ID, if provided, and normalize plugin entries
+# 3. Apply the proxy URL/provider ID, if provided, and normalize plugin entries
 json_edit "$CONFIG_FILE" normalize-plugin-entries - "$PROVIDER_ID"
 if [ -n "$PROXY_URL" ] || [ "$PROVIDER_ID" != "litellm" ]; then
   json_edit "$CONFIG_FILE" apply-plugin-options "$PROXY_URL" "$PROVIDER_ID"
-  [ -n "$PROXY_URL" ] && echo "==> Proxy URL set to: $PROXY_URL"
-  [ "$PROVIDER_ID" != "litellm" ] && echo "==> Provider ID set to: $PROVIDER_ID"
+fi
+if [ -n "$PROXY_URL" ]; then
+  echo "==> Proxy URL set to: $PROXY_URL"
+fi
+if [ "$PROVIDER_ID" != "litellm" ]; then
+  echo "==> Provider ID set to: $PROVIDER_ID"
 fi
 
 echo ""
 echo "Installed. Next steps:"
 echo ""
-echo "  1. Connect your LiteLLM API key:"
+echo "  1. Connect your $PROVIDER_ID API key:"
 echo ""
 echo "       opencode auth login"
 echo ""
-echo "     (pick LiteLLM and paste the key)"
+echo "     (pick $PROVIDER_ID and paste the key)"
 echo ""
 if [ -z "$PROXY_URL" ]; then
   echo "  2. If your proxy is not at http://127.0.0.1:4000/v1, set the URL:"
