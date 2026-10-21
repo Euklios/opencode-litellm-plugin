@@ -36,15 +36,6 @@ curl -fsSL "https://raw.githubusercontent.com/gianni-bischoff/opencode-litellm-p
   | bash -s -- https://litellm.example.com/v1
 ```
 
-To use a custom provider ID and name in `/connect` (and in model references),
-pass it as the second argument. This makes models use the
-`mait-gateway/<model>` prefix:
-
-```bash
-curl -fsSL "https://raw.githubusercontent.com/gianni-bischoff/opencode-litellm-plugin/main/install.sh?t=$(date +%s)" \
-  | bash -s -- https://ai-gateway.mait-group.com/v1 mait-gateway
-```
-
 Use an empty first argument to keep the default proxy URL:
 
 ```bash
