@@ -12,12 +12,8 @@
 # arguments — env vars on the curl side of a pipe do NOT reach bash):
 #
 #   curl -fsSL https://raw.githubusercontent.com/gianni-bischoff/opencode-litellm-plugin/main/install.sh \
-#     | bash -s -- https://your-proxy.example.com/v1 mait-gateway
+#     | bash -s -- https://your-proxy.example.com/v1 providername
 #
-# Optional second argument: provider ID (default "litellm"). Use an empty
-# first argument to keep the default proxy URL:
-#
-#   ... | bash -s -- "" mait-gateway
 #
 # (LITELLM_BASE_URL is still honored as a fallback.)
 set -euo pipefail
