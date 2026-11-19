@@ -6,19 +6,19 @@
 # provider configuration block.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/gianni-bischoff/opencode-litellm-plugin/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Euklios/opencode-litellm-plugin/main/install.sh | bash
 #
 # With a proxy URL and an optional provider ID/display name (pass them as
 # arguments — env vars on the curl side of a pipe do NOT reach bash):
 #
-#   curl -fsSL https://raw.githubusercontent.com/gianni-bischoff/opencode-litellm-plugin/main/install.sh \
+#   curl -fsSL https://raw.githubusercontent.com/Euklios/opencode-litellm-plugin/main/install.sh \
 #     | bash -s -- https://your-proxy.example.com/v1 providername
 #
 #
 # (LITELLM_BASE_URL is still honored as a fallback.)
 set -euo pipefail
 
-PLUGIN_SPEC="git+https://github.com/gianni-bischoff/opencode-litellm-plugin.git"
+PLUGIN_SPEC="git+https://github.com/Euklios/opencode-litellm-plugin.git"
 # Proxy URL: first script argument, else LITELLM_BASE_URL, else unset.
 # Provider ID: second script argument, else the default "litellm".
 PROXY_URL="${1:-${LITELLM_BASE_URL:-}}"
