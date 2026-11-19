@@ -9,6 +9,7 @@ import {
   budgetSchema,
   configOptionsFallback,
 } from "./lib/litellm-core.js"
+import { discoverMCPServers, registerMCP } from "./lib/litellm-mcp.js"
 
 /**
  * OpenCode V2 server plugin: LiteLLM proxy integration.
@@ -28,6 +29,8 @@ import {
  *  - Re-syncs every `refreshMinutes` so models added on the proxy
  *    appear automatically.
  *  - Reads proxy pricing (`/model/info`) and the key budget (`/key/info`).
+ *  - Registers the proxy's MCP servers in OpenCode when the `mcp` option
+ *    is set (see lib/litellm-mcp.js).
  *
  * This is intentionally the only JavaScript file in a plugin directory.
  * OpenCode automatically loads every file in `.opencode/plugins/`; keeping
@@ -391,6 +394,11 @@ export default {
     }
 
     await sync(state, "startup", reload)
+
+    // LiteLLM's own MCP servers (opt-in via options.mcp). Registered after
+    // the first sync so the key resolved from /connect is available.
+    await discoverMCPServers(state)
+    await registerMCP(ctx, state)
 
     if (options.sessionHeader) {
       try {

@@ -124,6 +124,7 @@ the `plugins` entry in `~/.config/opencode/opencode.json` to pass options:
 | `apiKey`         | —                              | Hardcoded API key (prefer `/connect` or the env var instead)      |
 | `providerID`     | `"litellm"`                    | Provider/integration ID                                           |
 | `name`           | `"LiteLLM"`                    | Display name                                                      |
+| `mcp`            | — (off)                        | Register the proxy's MCP servers — `true`, or an object (see [MCP servers](#mcp-servers)) |
 
 With no options at all, every default applies.
 
@@ -253,6 +254,57 @@ After prices are in place, check them with:
 ```bash
 opencode stats --cost --models
 ```
+
+## MCP servers
+
+LiteLLM can proxy MCP servers of its own at `<proxy root>/mcp/`, authenticated
+with the same proxy key. Set the `mcp` option and the plugin asks the proxy
+which MCP servers the key can use (`GET /v1/mcp/server`) and registers each one
+as a remote MCP server in OpenCode, so they show up in `opencode mcp list` and
+their tools in sessions — no second plugin and no key duplicated in the config:
+
+```jsonc
+{
+  "plugins": [
+    {
+      "package": "git+https://github.com/gianni-bischoff/opencode-litellm-plugin.git",
+      "options": {
+        "baseURL": "https://litellm.example.com/v1",
+        "mcp": true
+      }
+    }
+  ]
+}
+```
+
+The key is the one the plugin already resolved (`/connect` credential,
+`options.apiKey`, or `LITELLM_API_KEY`), sent as
+`x-litellm-api-key: Bearer <key>`. Registration is skipped when no key is
+available, and an MCP server of the same name already in your config always
+wins — so you can override any of this by hand.
+
+Each server is registered on the gateway URL with an `x-mcp-servers: <name>`
+header, which scopes it to that one proxy server. When the server list is not
+available (the key is not granted `/v1/mcp/server`, or an older proxy), the
+whole gateway is registered as a single server named `litellm` instead.
+
+`mcp` may also be an object:
+
+| Sub-option | Default                       | Description                                       |
+| ---------- | ----------------------------- | ------------------------------------------------- |
+| `enabled`  | `true`                        | Set `false` to turn it off while keeping the block |
+| `url`      | `<baseURL without /v1>/mcp/`  | Override the gateway endpoint                     |
+| `split`    | `true`                        | Set `false` to always register the single gateway  |
+| `prefix`   | `""`                          | Prepended to each server's name in OpenCode        |
+| `exclude`  | `[]`                          | Proxy server names to skip                         |
+| `name`     | `"litellm"`                   | Name of the single gateway server (fallback)       |
+| `header`   | `"x-litellm-api-key"`         | Auth header name                                  |
+| `apiKey`   | the resolved LiteLLM key      | Explicit key for the gateway only                 |
+| `codemode` | `false`                       | Expose the tools through codemode                  |
+
+The servers are registered through the plugin MCP API (`ctx.mcp.transform`);
+the log lines are `mcp (startup): N servers on the proxy: ...` and
+`mcp: registered ...`.
 
 ## Notes
 
