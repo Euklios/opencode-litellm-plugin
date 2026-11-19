@@ -27,7 +27,7 @@ It gives you a fully wired `litellm` provider with:
 One command (Linux/macOS/WSL):
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/gianni-bischoff/opencode-litellm-plugin/main/install.sh?t=$(date +%s)" | bash
+curl -fsSL "https://raw.githubusercontent.com/Euklios/opencode-litellm-plugin/main/install.sh?t=$(date +%s)" | bash
 ```
 
 If your proxy is not at the default `http://127.0.0.1:4000/v1`, pass its URL
@@ -35,7 +35,7 @@ as the first argument (env vars on the `curl` side of a pipe do not reach
 `bash`):
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/gianni-bischoff/opencode-litellm-plugin/main/install.sh?t=$(date +%s)" \
+curl -fsSL "https://raw.githubusercontent.com/Euklios/opencode-litellm-plugin/main/install.sh?t=$(date +%s)" \
   | bash -s -- https://litellm.example.com/v1
 ```
 
@@ -65,7 +65,7 @@ discovers your models automatically.
 ### Manual install (any OS)
 
 ```bash
-opencode plugin add git+https://github.com/gianni-bischoff/opencode-litellm-plugin.git
+opencode plugin add git+https://github.com/Euklios/opencode-litellm-plugin.git
 ```
 
 Then add this block to `~/.config/opencode/opencode.json` (or
@@ -77,7 +77,7 @@ appear in `/connect` / `opencode auth login`:
   "$schema": "https://opencode.ai/config.json",
   "plugins": [
     {
-      "package": "git+https://github.com/gianni-bischoff/opencode-litellm-plugin.git",
+      "package": "git+https://github.com/Euklios/opencode-litellm-plugin.git",
       "options": {
         "baseURL": "https://litellm.example.com/v1",
         "customerID": "my-team-id"
@@ -228,7 +228,7 @@ plugin fills in prices from two sources:
 
    ```jsonc
    {
-     "package": "git+https://github.com/gianni-bischoff/opencode-litellm-plugin.git",
+     "package": "git+https://github.com/Euklios/opencode-litellm-plugin.git",
      "options": {
        "baseURL": "https://your-proxy/v1",
        "infoKey": "sk-key-allowed-model-info"
@@ -267,7 +267,7 @@ their tools in sessions — no second plugin and no key duplicated in the config
 {
   "plugins": [
     {
-      "package": "git+https://github.com/gianni-bischoff/opencode-litellm-plugin.git",
+      "package": "git+https://github.com/Euklios/opencode-litellm-plugin.git",
       "options": {
         "baseURL": "https://litellm.example.com/v1",
         "mcp": true
