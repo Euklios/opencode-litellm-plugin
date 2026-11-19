@@ -6,6 +6,7 @@
   "main": "./plugin.js",
   "exports": {
     ".": "./plugin.js",
+    "./server": "./plugin.js",
     "./tui": "./tui.tsx"
   },
   "repository": {

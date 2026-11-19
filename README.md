@@ -164,6 +164,7 @@ tail -20 ~/.local/share/opencode/litellm-plugin.log
 | `GET .../models -> 401` / `403` | Key rejected (wrong/expired) | Reconnect a valid proxy key via `opencode auth login` |
 | `fetch failed: ...` | Proxy unreachable | Check `options.baseURL`; for Tailscale proxies make sure the machine is on the tailnet |
 | no log lines at all | Plugin not loaded | the plugin entry must be present in the config (`opencode plugin add` writes it) |
+| `Plugin entrypoint not found: git+https://...` in the OpenCode server log | A previous install was interrupted, leaving a partial generation under `~/.cache/opencode/npm/git-opencode-litellm-plugin-*`; OpenCode reuses it forever and never finds the entrypoint | Remove the cached generations (`rm -rf ~/.cache/opencode/npm/git-opencode-litellm-plugin-*`), then run `opencode plugin add <spec>` (or re-run `install.sh`) and reload OpenCode |
 
 Quick reachability test from that machine (with your proxy key):
 
